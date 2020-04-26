@@ -639,25 +639,28 @@ void p3IdService::notifyChanges(std::vector<RsGxsNotify *> &changes)
                 std::cerr << "p3IdService::notifyChanges() Auto Subscribe to Incoming Groups: " << *git;
                 std::cerr << std::endl;
 #endif
+
                 if(!rsReputations->isIdentityBanned(RsGxsId(*git)))
                 {
-                    uint32_t token;
-                    RsGenExchange::subscribeToGroup(token, *git, true);
-
-                    // also time_stamp the key that this group represents
-
-                    timeStampKey(RsGxsId(*git),RsIdentityUsage(serviceType(),RsIdentityUsage::IDENTITY_DATA_UPDATE)) ;
-
                     // notify that a new identity is received, if needed
+
+                    bool should_subscribe = false;
 
                     switch(groupChange->getType())
                     {
+					case RsGxsNotify::TYPE_PROCESSED:	break ; // Happens when the group is subscribed. This is triggered by RsGenExchange::subscribeToGroup, so better not
+                        										// call it again from here!!
+
                     case RsGxsNotify::TYPE_PUBLISHED:
                     {
                         auto ev = std::make_shared<RsGxsIdentityEvent>();
                         ev->mIdentityId = *git;
                         ev->mIdentityEventCode = RsGxsIdentityEventCode::UPDATED_IDENTITY;
                         rsEvents->postEvent(ev);
+
+						// also time_stamp the key that this group represents
+						timeStampKey(RsGxsId(*git),RsIdentityUsage(serviceType(),RsIdentityUsage::IDENTITY_DATA_UPDATE)) ;
+                        should_subscribe = true;
                     }
 						break;
 
@@ -667,12 +670,23 @@ void p3IdService::notifyChanges(std::vector<RsGxsNotify *> &changes)
                         ev->mIdentityId = *git;
                         ev->mIdentityEventCode = RsGxsIdentityEventCode::NEW_IDENTITY;
                         rsEvents->postEvent(ev);
+
+						// also time_stamp the key that this group represents
+						timeStampKey(RsGxsId(*git),RsIdentityUsage(serviceType(),RsIdentityUsage::IDENTITY_DATA_UPDATE)) ;
+                        should_subscribe = true;
                     }
                         break;
 
                     default:
                         break;
                     }
+
+                    if(should_subscribe)
+					{
+						uint32_t token;
+						RsGenExchange::subscribeToGroup(token, *git, true);
+					}
+
                 }
             }
         }
@@ -3508,25 +3522,7 @@ RsGenExchange::ServiceCreate_Return p3IdService::service_CreateGroup(
 		unsigned int sign_size = MAX_SIGN_SIZE;
         memset(signarray,0,MAX_SIGN_SIZE) ;	// just in case.
 
-		/* -10 is never returned by askForDeferredSelfSignature therefore we can
-		 * use it to properly detect and handle the case libretroshare is being
-		 * used outside retroshare-gui */
-		int result = -10;
-
-		/* This method is DEPRECATED we call it only for retrocompatibility with
-		 * retroshare-gui, when called from something different then
-		 * retroshare-gui for example retroshare-service it miserably fail! */
-		mPgpUtils->askForDeferredSelfSignature(
-		            static_cast<const void*>(hash.toByteArray()),
-		            hash.SIZE_IN_BYTES, signarray, &sign_size, result,
-		            __PRETTY_FUNCTION__ );
-
-		/* If askForDeferredSelfSignature left result untouched it means
-		 * libretroshare is being used by something different then
-		 * retroshare-gui so try calling AuthGPG::getAuthGPG()->SignDataBin
-		 * directly */
-		if( result == -10 )
-			result = AuthGPG::getAuthGPG()->SignDataBin(
+		int	result = AuthGPG::getAuthGPG()->SignDataBin(
 			            static_cast<const void*>(hash.toByteArray()),
 			            hash.SIZE_IN_BYTES, signarray, &sign_size,
 			            __PRETTY_FUNCTION__ )

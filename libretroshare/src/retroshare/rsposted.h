@@ -40,21 +40,19 @@ class RsPosted;
  */
 extern RsPosted* rsPosted;
 
-struct RsPostedGroup
+struct RsPostedGroup: RsGxsGenericGroupData
 {
-	RsGroupMetaData mMeta;
 	std::string mDescription;
 	RsGxsImage mGroupImage;
 };
 
-struct RsPostedPost
+struct RsPostedPost: public RsGxsGenericMsgData
 {
 	RsPostedPost(): mHaveVoted(false), mUpVotes(0), mDownVotes(0), mComments(0),
 	    mHotScore(0), mTopScore(0), mNewScore(0) {}
 
 	bool calculateScores(rstime_t ref_time);
 
-	RsMsgMetaData mMeta;
 	std::string mLink;
 	std::string mNotes;
 
@@ -116,6 +114,7 @@ enum class RsPostedEventCode: uint8_t
 	UPDATED_POSTED_GROUP     = 0x04,
 	UPDATED_MESSAGE          = 0x05,
 	READ_STATUS_CHANGED      = 0x06,
+	STATISTICS_CHANGED       = 0x07,
 };
 
 
@@ -150,11 +149,26 @@ public:
 	        const std::list<RsGxsGroupId>& boardsIds,
 	        std::vector<RsPostedGroup>& boardsInfo ) = 0;
 
+	virtual bool getBoardsSummaries(std::list<RsGroupMetaData>& groupInfo) =0;
+
+	virtual bool getBoardAllContent(
+	        const RsGxsGroupId& boardId,
+	        std::vector<RsPostedPost>& posts,
+	        std::vector<RsGxsComment>& comments ) = 0;
+
 	virtual bool getBoardContent(
 	        const RsGxsGroupId& boardId,
 	        const std::set<RsGxsMessageId>& contentsIds,
 	        std::vector<RsPostedPost>& posts,
 	        std::vector<RsGxsComment>& comments ) = 0;
+
+	virtual bool editBoard(RsPostedGroup& board) =0;
+
+	virtual bool createBoard(RsPostedGroup& board) =0;
+
+	virtual bool getBoardStatistics(const RsGxsGroupId& boardId,GxsGroupStatistic& stat) =0;
+
+	virtual bool getBoardsServiceStatistics(GxsServiceStatistic& stat) =0;
 
 	enum RS_DEPRECATED RankType {TopRankType, HotRankType, NewRankType };
 

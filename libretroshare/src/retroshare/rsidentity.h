@@ -37,7 +37,7 @@
 #include "serialiser/rstypeserializer.h"
 #include "util/rsdeprecate.h"
 
-struct RsIdentity;
+class RsIdentity;
 
 /**
  * Pointer to global instance of RsIdentity service implementation
@@ -383,8 +383,9 @@ struct RsIdentityDetails : RsSerializable
 
 
 /** The Main Interface Class for GXS people identities */
-struct RsIdentity : RsGxsIfaceHelper
+class RsIdentity: public RsGxsIfaceHelper
 {
+public:
 	explicit RsIdentity(RsGxsIface& gxs) : RsGxsIfaceHelper(gxs) {}
 
 	/**
