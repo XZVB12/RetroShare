@@ -327,6 +327,8 @@ INCLUDEPATH *= $${OPENPGPSDK_DIR}
 PRE_TARGETDEPS *= $${OPENPGPSDK_DIR}/lib/libops.a
 LIBS *= $${OPENPGPSDK_DIR}/lib/libops.a -lbz2
 
+################################### HEADERS & SOURCES #############################
+
 HEADERS +=	ft/ftchunkmap.h \
 			ft/ftcontroller.h \
 			ft/ftdata.h \
@@ -468,7 +470,12 @@ HEADERS +=	turtle/p3turtle.h \
 			turtle/turtleclientservice.h
 
 HEADERS +=	util/folderiterator.h \
-			util/rsdebug.h \
+    util/rsdebug.h \
+    util/rsdebuglevel0.h \
+    util/rsdebuglevel1.h \
+    util/rsdebuglevel2.h \
+    util/rsdebuglevel3.h \
+    util/rsdebuglevel4.h \
 			util/rskbdinput.h \
 			util/rsmemory.h \
 			util/smallobject.h \
@@ -672,6 +679,7 @@ HEADERS += rsitems/rsnxsitems.h \
 	util/rsdbbind.h \
 	util/contentvalue.h \
 	gxs/rsgxsutil.h \
+	gxs/rsgxsnotify.h \
 	gxs/gxssecurity.h \
 	gxs/rsgds.h \
 	gxs/rsgxs.h \
@@ -869,7 +877,7 @@ rs_jsonapi {
         genrestbedheader.name = Generating restbed header.
         genrestbedheader.input = genrestbedlib.output
         genrestbedheader.output = $${RESTBED_HEADER_FILE}
-        genrestbedheader.CONFIG += target_predeps combine no_link
+        genrestbedheader.CONFIG += target_predeps no_link
         genrestbedheader.variable_out = HEADERS
         genrestbedheader.commands = cd $${RESTBED_BUILD_PATH} && $(MAKE) install
         QMAKE_EXTRA_COMPILERS += genrestbedheader

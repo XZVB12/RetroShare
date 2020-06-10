@@ -320,9 +320,9 @@ static const uint32_t RS_NXS_ITEM_ENCRYPTION_STATUS_GXS_KEY_MISSING     = 0x05 ;
  || defined(NXS_NET_DEBUG_4) || defined(NXS_NET_DEBUG_5) || defined(NXS_NET_DEBUG_6)  || defined(NXS_NET_DEBUG_7) \
  || defined(NXS_NET_DEBUG_8)
 
-static const RsPeerId     peer_to_print     = RsPeerId(std::string(""))   ;
-static const RsGxsGroupId group_id_to_print = RsGxsGroupId(std::string("")) ;	// use this to allow to this group id only, or "" for all IDs
-static const uint32_t     service_to_print  = RS_SERVICE_GXS_TYPE_CHANNELS ;                       	// use this to allow to this service id only, or 0 for all services
+static const RsPeerId     peer_to_print     = RsPeerId();//std::string("a97fef0e2dc82ddb19200fb30f9ac575"))   ;
+static const RsGxsGroupId group_id_to_print = RsGxsGroupId(std::string("66052380f5d1d0c5992e2b55dc402ce6")) ;	// use this to allow to this group id only, or "" for all IDs
+static const uint32_t     service_to_print  = RS_SERVICE_GXS_TYPE_GXSCIRCLE;                       	// use this to allow to this service id only, or 0 for all services
 										// warning. Numbers should be SERVICE IDS (see serialiser/rsserviceids.h. E.g. 0x0215 for forums)
 
 class nullstream: public std::ostream {};
@@ -953,7 +953,7 @@ void RsGxsNetService::handleRecvSyncGrpStatistics(RsNxsSyncGrpStatsItem *grs)
 #endif
 	    mDataStore->retrieveGxsMsgMetaData(reqIds, result);
 
-	    const std::vector<RsGxsMsgMetaData*>& vec(result[grs->grpId]) ;
+	    const std::vector<const RsGxsMsgMetaData*>& vec(result[grs->grpId]) ;
 
 	    if(vec.empty())	// that means we don't have any, or there isn't any, but since the default is always 0, no need to send.
 		    return ;
@@ -970,12 +970,9 @@ void RsGxsNetService::handleRecvSyncGrpStatistics(RsNxsSyncGrpStatsItem *grs)
 														// be used to discard groups that are not used.
 
 	    for(uint32_t i=0;i<vec.size();++i)
-	    {
 		    if(grs_resp->last_post_TS < vec[i]->mPublishTs)
 			    grs_resp->last_post_TS = vec[i]->mPublishTs;
 
-		    delete vec[i] ;
-	    }
 #ifdef NXS_NET_DEBUG_6
 	    GXSNETDEBUG_PG(grs->PeerId(),grs->grpId) << "  sending back statistics item with " << vec.size() << " elements." << std::endl;
 #endif
@@ -2953,21 +2950,19 @@ void RsGxsNetService::locked_genReqMsgTransaction(NxsTransaction* tr)
     reqIds[grpId] = std::set<RsGxsMessageId>();
     GxsMsgMetaResult result;
     mDataStore->retrieveGxsMsgMetaData(reqIds, result);
-    std::vector<RsGxsMsgMetaData*> &msgMetaV = result[grpId];
+    std::vector<const RsGxsMsgMetaData*> &msgMetaV = result[grpId];
 
 #ifdef NXS_NET_DEBUG_1
     GXSNETDEBUG_PG(item->PeerId(),grpId) << "  retrieving grp message list..." << std::endl;
     GXSNETDEBUG_PG(item->PeerId(),grpId) << "  grp locally contains " << msgMetaV.size() << " messsages." << std::endl;
 #endif
-    std::vector<RsGxsMsgMetaData*>::const_iterator vit = msgMetaV.begin();
+    std::vector<const RsGxsMsgMetaData*>::const_iterator vit = msgMetaV.begin();
     std::set<RsGxsMessageId> msgIdSet;
 
     // put ids in set for each searching
     for(; vit != msgMetaV.end(); ++vit)
-    {
         msgIdSet.insert((*vit)->mMsgId);
-        delete(*vit);
-    }
+
     msgMetaV.clear();
 
 #ifdef NXS_NET_DEBUG_1
@@ -3597,6 +3592,10 @@ void RsGxsNetService::locked_genSendMsgsTransaction(NxsTransaction* tr)
 
 		    msg->count = 1;	// only one piece. This is to keep compatibility if we ever implement fragmenting in the future.
 		    msg->pos = 0;
+
+#ifdef NXS_NET_DEBUG_0
+			GXSNETDEBUG_PG(tr->mTransaction->PeerId(),msg->grpId) << "   sending msg Id " << msg->msgId << " in Group " << msg->grpId << std::endl;
+#endif
 
 		    newTr->mItems.push_back(msg);
 		    msgSize++;
@@ -4363,7 +4362,7 @@ void RsGxsNetService::handleRecvSyncMessage(RsNxsSyncMsgReqItem *item,bool item_
 
     GxsMsgMetaResult metaResult;
     mDataStore->retrieveGxsMsgMetaData(req, metaResult);
-    std::vector<RsGxsMsgMetaData*>& msgMetas = metaResult[item->grpId];
+    std::vector<const RsGxsMsgMetaData*>& msgMetas = metaResult[item->grpId];
 
 #ifdef NXS_NET_DEBUG_0
     GXSNETDEBUG_PG(item->PeerId(),item->grpId) << "   retrieving message meta data." << std::endl;
@@ -4391,9 +4390,9 @@ void RsGxsNetService::handleRecvSyncMessage(RsNxsSyncMsgReqItem *item,bool item_
 
     if(canSendMsgIds(msgMetas, *grpMeta, peer, should_encrypt_to_this_circle_id))
     {
-	    for(std::vector<RsGxsMsgMetaData*>::iterator vit = msgMetas.begin();vit != msgMetas.end(); ++vit)
+	    for(auto vit = msgMetas.begin();vit != msgMetas.end(); ++vit)
 		{
-			RsGxsMsgMetaData* m = *vit;
+			const RsGxsMsgMetaData* m = *vit;
 
             // Check reputation
 
@@ -4493,8 +4492,8 @@ void RsGxsNetService::handleRecvSyncMessage(RsNxsSyncMsgReqItem *item,bool item_
 
 
     // release meta resource
-    for(std::vector<RsGxsMsgMetaData*>::iterator vit = msgMetas.begin(); vit != msgMetas.end(); ++vit)
-	    delete *vit;
+	//   for(std::vector<RsGxsMsgMetaData*>::iterator vit = msgMetas.begin(); vit != msgMetas.end(); ++vit)
+	//     delete *vit;
 }
 
 void RsGxsNetService::locked_pushMsgRespFromList(std::list<RsNxsItem*>& itemL, const RsPeerId& sslId, const RsGxsGroupId& grp_id,const uint32_t& transN)
@@ -4538,7 +4537,7 @@ void RsGxsNetService::locked_pushMsgRespFromList(std::list<RsNxsItem*>& itemL, c
 	}
 }
 
-bool RsGxsNetService::canSendMsgIds(std::vector<RsGxsMsgMetaData*>& msgMetas, const RsGxsGrpMetaData& grpMeta, const RsPeerId& sslId,RsGxsCircleId& should_encrypt_id)
+bool RsGxsNetService::canSendMsgIds(std::vector<const RsGxsMsgMetaData*>& msgMetas, const RsGxsGrpMetaData& grpMeta, const RsPeerId& sslId,RsGxsCircleId& should_encrypt_id)
 {
 #ifdef NXS_NET_DEBUG_4
     GXSNETDEBUG_PG(sslId,grpMeta.mGroupId) << "RsGxsNetService::canSendMsgIds() CIRCLE VETTING" << std::endl;
@@ -4605,7 +4604,7 @@ bool RsGxsNetService::canSendMsgIds(std::vector<RsGxsMsgMetaData*>& msgMetas, co
                 GXSNETDEBUG_PG(sslId,grpMeta.mGroupId) << "   deleting MsgMeta entry for msg ID " << msgMetas[i]->mMsgId << " signed by " << msgMetas[i]->mAuthorId << " who is not in group circle " << circleId << std::endl;
 #endif
 
-                delete msgMetas[i] ;
+                //delete msgMetas[i] ;
                 msgMetas[i] = msgMetas[msgMetas.size()-1] ;
                 msgMetas.pop_back() ;
             }

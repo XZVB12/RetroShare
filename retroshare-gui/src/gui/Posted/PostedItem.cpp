@@ -32,10 +32,14 @@
 #include "gui/common/FilesDefs.h"
 #include "util/qtthreadsutils.h"
 #include "util/HandleRichText.h"
+#include "gui/MainWindow.h"
+#include "gui/Identity/IdDialog.h"
 #include "PhotoView.h"
 #include "ui_PostedItem.h"
 
 #include <retroshare/rsposted.h>
+
+#include <chrono>
 #include <iostream>
 
 #define LINK_IMAGE ":/images/thumb-link.png"
@@ -46,20 +50,40 @@
 //                                     BasePostedItem                                   //
 //========================================================================================
 
-BasePostedItem::BasePostedItem(FeedHolder *feedHolder, uint32_t feedId, const RsGroupMetaData &group_meta, const RsGxsMessageId& post_id, bool isHome, bool autoUpdate) :
-    GxsFeedItem(feedHolder, feedId, group_meta.mGroupId, post_id, isHome, rsPosted, autoUpdate),
-  	mGroupMeta(group_meta)
+BasePostedItem::BasePostedItem( FeedHolder *feedHolder, uint32_t feedId
+                              , const RsGroupMetaData &group_meta, const RsGxsMessageId& post_id
+                              , bool isHome, bool autoUpdate)
+    : GxsFeedItem(feedHolder, feedId, group_meta.mGroupId, post_id, isHome, rsPosted, autoUpdate)
+    , mInFill(false), mGroupMeta(group_meta)
+    , mLoaded(false), mIsLoadingGroup(false), mIsLoadingMessage(false), mIsLoadingComment(false)
 {
-    mPost.mMeta.mMsgId = post_id;
-    mPost.mMeta.mGroupId = mGroupMeta.mGroupId;
-    mLoaded = false;
+	mPost.mMeta.mMsgId = post_id;
+	mPost.mMeta.mGroupId = mGroupMeta.mGroupId;
 }
 
-BasePostedItem::BasePostedItem(FeedHolder *feedHolder, uint32_t feedId, const RsGxsGroupId &groupId, const RsGxsMessageId& post_id, bool isHome, bool autoUpdate) :
-    GxsFeedItem(feedHolder, feedId, groupId, post_id, isHome, rsPosted, autoUpdate)
+BasePostedItem::BasePostedItem( FeedHolder *feedHolder, uint32_t feedId
+                              , const RsGxsGroupId &groupId, const RsGxsMessageId& post_id
+                              , bool isHome, bool autoUpdate)
+    : GxsFeedItem(feedHolder, feedId, groupId, post_id, isHome, rsPosted, autoUpdate)
+    , mInFill(false)
+    , mLoaded(false), mIsLoadingGroup(false), mIsLoadingMessage(false), mIsLoadingComment(false)
 {
-    mPost.mMeta.mMsgId = post_id;
-    mLoaded = false;
+	mPost.mMeta.mMsgId = post_id;
+}
+
+BasePostedItem::~BasePostedItem()
+{
+	auto timeout = std::chrono::steady_clock::now() + std::chrono::milliseconds(200);
+	while( (mIsLoadingGroup || mIsLoadingMessage || mIsLoadingComment)
+	       && std::chrono::steady_clock::now() < timeout)
+	{
+		RsDbg() << __PRETTY_FUNCTION__ << " is Waiting "
+		        << (mIsLoadingGroup ? "Group " : "")
+		        << (mIsLoadingMessage ? "Message " : "")
+		        << (mIsLoadingComment ? "Comment " : "")
+		        << "loading finished." << std::endl;
+		std::this_thread::sleep_for(std::chrono::milliseconds(100));
+	}
 }
 
 void BasePostedItem::paintEvent(QPaintEvent *e)
@@ -96,6 +120,7 @@ bool BasePostedItem::setPost(const RsPostedPost &post, bool doFill)
 
 void BasePostedItem::loadGroup()
 {
+	mIsLoadingGroup = true;
 	RsThread::async([this]()
 	{
 		// 1 - get group data
@@ -110,13 +135,14 @@ void BasePostedItem::loadGroup()
 		if(!rsPosted->getBoardsInfo(groupIds,groups))
 		{
 			RsErr() << "GxsPostedGroupItem::loadGroup() ERROR getting data" << std::endl;
+			mIsLoadingGroup = false;
 			return;
 		}
 
 		if (groups.size() != 1)
 		{
-			std::cerr << "GxsPostedGroupItem::loadGroup() Wrong number of Items";
-			std::cerr << std::endl;
+			std::cerr << "GxsPostedGroupItem::loadGroup() Wrong number of Items" << std::endl;
+			mIsLoadingGroup = false;
 			return;
 		}
 		RsPostedGroup group(groups[0]);
@@ -127,7 +153,8 @@ void BasePostedItem::loadGroup()
 			 * thread, for example to update the data model with new information
 			 * after a blocking call to RetroShare API complete */
 
-            mGroupMeta = group.mMeta;
+			mGroupMeta = group.mMeta;
+			mIsLoadingGroup = false;
 
 		}, this );
 	});
@@ -135,25 +162,28 @@ void BasePostedItem::loadGroup()
 
 void BasePostedItem::loadMessage()
 {
+	mIsLoadingMessage = true;
 	RsThread::async([this]()
 	{
 		// 1 - get group data
 
 		std::vector<RsPostedPost> posts;
 		std::vector<RsGxsComment> comments;
+		std::vector<RsGxsVote> votes;
 
-		if(! rsPosted->getBoardContent( groupId(), std::set<RsGxsMessageId>( { messageId() } ),posts,comments))
+		if(! rsPosted->getBoardContent( groupId(), std::set<RsGxsMessageId>( { messageId() } ),posts,comments,votes))
 		{
 			RsErr() << "BasePostedItem::loadMessage() ERROR getting data" << std::endl;
+			mIsLoadingMessage = false;
 			return;
 		}
 
 		if (posts.size() == 1)
 		{
 			std::cerr << (void*)this << ": Obtained post, with msgId = " << posts[0].mMeta.mMsgId << std::endl;
-            const RsPostedPost& post(posts[0]);
+			const RsPostedPost& post(posts[0]);
 
-			RsQThreadUtils::postToObject( [post,this]() { setPost(post,true);  }, this );
+			RsQThreadUtils::postToObject( [post,this]() { setPost(post,true); mIsLoadingMessage = false;}, this );
 		}
 		else if(comments.size() == 1)
 		{
@@ -162,21 +192,21 @@ void BasePostedItem::loadMessage()
 
 			RsQThreadUtils::postToObject( [cmt,this]()
 			{
-                setComment(cmt);
+				setComment(cmt);
 
 				//Change this item to be uploaded with thread element.
 				setMessageId(cmt.mMeta.mThreadId);
 				requestMessage();
 
+				mIsLoadingMessage = false;
 			}, this );
 
 		}
 		else
 		{
-			std::cerr << "GxsChannelPostItem::loadMessage() Wrong number of Items. Remove It.";
-			std::cerr << std::endl;
+			std::cerr << "GxsChannelPostItem::loadMessage() Wrong number of Items. Remove It." << std::endl;
 
-			RsQThreadUtils::postToObject( [this]() {  removeItem(); }, this );
+			RsQThreadUtils::postToObject( [this]() {  removeItem(); mIsLoadingMessage = false;}, this );
 		}
 	});
 }
@@ -188,7 +218,7 @@ void BasePostedItem::loadComment()
 	std::cerr << "GxsChannelPostItem::loadComment()";
 	std::cerr << std::endl;
 #endif
-
+	mIsLoadingComment = true;
 	RsThread::async([this]()
 	{
 		// 1 - get group data
@@ -200,19 +230,21 @@ void BasePostedItem::loadComment()
 
 		std::vector<RsPostedPost> posts;
 		std::vector<RsGxsComment> comments;
+		std::vector<RsGxsVote> votes;
 
-		if(! rsPosted->getBoardContent( groupId(),msgIds,posts,comments))
+		if(! rsPosted->getBoardContent( groupId(),msgIds,posts,comments,votes))
 		{
 			RsErr() << "BasePostedItem::loadGroup() ERROR getting data" << std::endl;
+			mIsLoadingComment = false;
 			return;
 		}
 
-        int comNb = comments.size();
+		int comNb = comments.size();
 
 		RsQThreadUtils::postToObject( [comNb,this]()
 		{
-            setCommentsSize(comNb);
-
+			setCommentsSize(comNb);
+			mIsLoadingComment = false;
 		}, this );
 	});
 }
@@ -308,6 +340,24 @@ void BasePostedItem::viewPicture()
 	/* window will destroy itself! */
 }
 
+void BasePostedItem::showAuthorInPeople()
+{
+	if(mPost.mMeta.mAuthorId.isNull())
+	{
+		std::cerr << "(EE) GxsForumThreadWidget::loadMsgData_showAuthorInPeople() ERROR Missing Message Data...";
+		std::cerr << std::endl;
+	}
+
+	/* window will destroy itself! */
+	IdDialog *idDialog = dynamic_cast<IdDialog*>(MainWindow::getPage(MainWindow::People));
+
+	if (!idDialog)
+		return ;
+
+	MainWindow::showWindow(MainWindow::People);
+	idDialog->navigate(RsGxsId(mPost.mMeta.mAuthorId));
+}
+
 //========================================================================================
 //                                        PostedItem                                    //
 //========================================================================================
@@ -364,6 +414,8 @@ void PostedItem::setup()
 	QAction *CopyLinkAction = new QAction(QIcon(""),tr("Copy RetroShare Link"), this);
 	connect(CopyLinkAction, SIGNAL(triggered()), this, SLOT(copyMessageLink()));
 
+	QAction *showInPeopleAct = new QAction(QIcon(), tr("Show author in people tab"), this);
+	connect(showInPeopleAct, SIGNAL(triggered()), this, SLOT(showAuthorInPeople()));
 
 	int S = QFontMetricsF(font()).height() ;
 
@@ -377,6 +429,8 @@ void PostedItem::setup()
 
 	QMenu *menu = new QMenu();
 	menu->addAction(CopyLinkAction);
+	menu->addSeparator();
+	menu->addAction(showInPeopleAct);
 	ui->shareButton->setMenu(menu);
 
 	ui->clearButton->hide();
@@ -408,8 +462,6 @@ void PostedItem::makeUpVote()
 	emit vote(msgId, true);
 }
 
-
-
 void PostedItem::setComment(const RsGxsComment& cmt)
 {
 	ui->newCommentLabel->show();
@@ -429,97 +481,115 @@ void PostedItem::setCommentsSize(int comNb)
 
 void PostedItem::fill()
 {
-	RetroShareLink link = RetroShareLink::createGxsGroupLink(RetroShareLink::TYPE_POSTED, mGroupMeta.mGroupId, groupName());
-	ui->nameLabel->setText(link.toHtml());
+	RsReputationLevel overall_reputation = rsReputations->overallReputationLevel(mPost.mMeta.mAuthorId);
+	bool redacted = (overall_reputation == RsReputationLevel::LOCALLY_NEGATIVE);
 
-	QPixmap sqpixmap2 = QPixmap(":/images/thumb-default.png");
+	if(redacted) {
+		ui->expandButton->setDisabled(true);
+		ui->commentButton->setDisabled(true);
+		ui->voteUpButton->setDisabled(true);
+		ui->voteDownButton->setDisabled(true);
 
-	mInFill = true;
-	int desired_height = 1.5*(ui->voteDownButton->height() + ui->voteUpButton->height() + ui->scoreLabel->height());
-	int desired_width =  sqpixmap2.width()*desired_height/(float)sqpixmap2.height();
+		ui->thumbnailLabel->setPixmap( QPixmap(":/images/thumb-default.png"));
+		ui->fromLabel->setId(mPost.mMeta.mAuthorId);
+		ui->titleLabel->setText(tr( "<p><font color=\"#ff0000\"><b>The author of this message (with ID %1) is banned.</b>").arg(QString::fromStdString(mPost.mMeta.mAuthorId.toStdString()))) ;
+		QDateTime qtime;
+		qtime.setTime_t(mPost.mMeta.mPublishTs);
+		QString timestamp = qtime.toString("hh:mm dd-MMM-yyyy");
+		ui->dateLabel->setText(timestamp);
+	} else {
+		RetroShareLink link = RetroShareLink::createGxsGroupLink(RetroShareLink::TYPE_POSTED, mGroupMeta.mGroupId, groupName());
+		ui->nameLabel->setText(link.toHtml());
 
-	QDateTime qtime;
-	qtime.setTime_t(mPost.mMeta.mPublishTs);
-	QString timestamp = qtime.toString("hh:mm dd-MMM-yyyy");
-	QString timestamp2 = misc::timeRelativeToNow(mPost.mMeta.mPublishTs);
-	ui->dateLabel->setText(timestamp2);
-	ui->dateLabel->setToolTip(timestamp);
+		QPixmap sqpixmap2 = FilesDefs::getPixmapFromQtResourcePath(":/images/thumb-default.png");
 
-	ui->fromLabel->setId(mPost.mMeta.mAuthorId);
+		mInFill = true;
+		int desired_height = 1.5*(ui->voteDownButton->height() + ui->voteUpButton->height() + ui->scoreLabel->height());
+		int desired_width =  sqpixmap2.width()*desired_height/(float)sqpixmap2.height();
 
-	// Use QUrl to check/parse our URL
-	// The only combination that seems to work: load as EncodedUrl, extract toEncoded().
-	QByteArray urlarray(mPost.mLink.c_str());
-    QUrl url = QUrl::fromEncoded(urlarray.trimmed());
-	QString urlstr = "Invalid Link";
-	QString sitestr = "Invalid Link";
+		QDateTime qtime;
+		qtime.setTime_t(mPost.mMeta.mPublishTs);
+		QString timestamp = qtime.toString("hh:mm dd-MMM-yyyy");
+		QString timestamp2 = misc::timeRelativeToNow(mPost.mMeta.mPublishTs);
+		ui->dateLabel->setText(timestamp2);
+		ui->dateLabel->setToolTip(timestamp);
 
-	bool urlOkay = url.isValid();
-	if (urlOkay)
-	{
-		QString scheme = url.scheme();
-		if ((scheme != "https")
-			&& (scheme != "http")
-			&& (scheme != "ftp")
-			&& (scheme != "retroshare"))
+		ui->fromLabel->setId(mPost.mMeta.mAuthorId);
+
+		// Use QUrl to check/parse our URL
+		// The only combination that seems to work: load as EncodedUrl, extract toEncoded().
+		QByteArray urlarray(mPost.mLink.c_str());
+		QUrl url = QUrl::fromEncoded(urlarray.trimmed());
+		QString urlstr = "Invalid Link";
+		QString sitestr = "Invalid Link";
+
+		bool urlOkay = url.isValid();
+		if (urlOkay)
 		{
-			urlOkay = false;
-			sitestr = "Invalid Link Scheme";
+			QString scheme = url.scheme();
+			if ((scheme != "https")
+				&& (scheme != "http")
+				&& (scheme != "ftp")
+				&& (scheme != "retroshare"))
+			{
+				urlOkay = false;
+				sitestr = "Invalid Link Scheme";
+			}
 		}
-	}
 
-	if (urlOkay)
-	{
-		urlstr =  QString("<a href=\"");
-		urlstr += QString(url.toEncoded());
-		urlstr += QString("\" ><span style=\" text-decoration: underline; color:#2255AA;\"> ");
-		urlstr += messageName();
-		urlstr += QString(" </span></a>");
+		if (urlOkay)
+		{
+			urlstr =  QString("<a href=\"");
+			urlstr += QString(url.toEncoded());
+			urlstr += QString("\" ><span style=\" text-decoration: underline; color:#2255AA;\"> ");
+			urlstr += messageName();
+			urlstr += QString(" </span></a>");
 
-		QString siteurl = url.toEncoded();
-		sitestr = QString("<a href=\"%1\" ><span style=\" text-decoration: underline; color:#0079d3;\"> %2 </span></a>").arg(siteurl).arg(siteurl);
+			QString siteurl = url.toEncoded();
+			sitestr = QString("<a href=\"%1\" ><span style=\" text-decoration: underline; color:#0079d3;\"> %2 </span></a>").arg(siteurl).arg(siteurl);
 
-		ui->titleLabel->setText(urlstr);
-	}else
-	{
-		ui->titleLabel->setText(messageName());
+			ui->titleLabel->setText(urlstr);
+		}else
+		{
+			ui->titleLabel->setText(messageName());
 
-	}
-
-	if (urlarray.isEmpty())
-	{
-		ui->siteLabel->hide();
-	}
-
-	ui->siteLabel->setText(sitestr);
-
-	if(mPost.mImage.mData != NULL)
-	{
-		QPixmap pixmap;
-		GxsIdDetails::loadPixmapFromData(mPost.mImage.mData, mPost.mImage.mSize, pixmap,GxsIdDetails::ORIGINAL);
-		// Wiping data - as its been passed to thumbnail.
-
-		QPixmap sqpixmap = pixmap.scaled(desired_width,desired_height, Qt::KeepAspectRatioByExpanding, Qt::SmoothTransformation);
-		ui->thumbnailLabel->setPixmap(sqpixmap);
-		ui->thumbnailLabel->setToolTip(tr("Click to view Picture"));
-
-		QPixmap scaledpixmap;
-		if(pixmap.width() > 800){
-			QPixmap scaledpixmap = pixmap.scaledToWidth(800, Qt::SmoothTransformation);
-			ui->pictureLabel->setPixmap(scaledpixmap);
-		}else{
-			ui->pictureLabel->setPixmap(pixmap);
 		}
-	}
-	else if (urlOkay && (mPost.mImage.mData == NULL))
-	{
-		ui->expandButton->setDisabled(true);
-		ui->thumbnailLabel->setPixmap(FilesDefs::getPixmapFromQtResourcePath(LINK_IMAGE));
-	}
-	else
-	{
-		ui->expandButton->setDisabled(true);
-		ui->thumbnailLabel->setPixmap(sqpixmap2);
+
+		if (urlarray.isEmpty())
+		{
+			ui->siteLabel->hide();
+		}
+
+		ui->siteLabel->setText(sitestr);
+
+		if(mPost.mImage.mData != NULL)
+		{
+			QPixmap pixmap;
+			GxsIdDetails::loadPixmapFromData(mPost.mImage.mData, mPost.mImage.mSize, pixmap,GxsIdDetails::ORIGINAL);
+			// Wiping data - as its been passed to thumbnail.
+
+			QPixmap sqpixmap = pixmap.scaled(desired_width,desired_height, Qt::KeepAspectRatioByExpanding, Qt::SmoothTransformation);
+			ui->thumbnailLabel->setPixmap(sqpixmap);
+			ui->thumbnailLabel->setToolTip(tr("Click to view Picture"));
+
+			QPixmap scaledpixmap;
+			if(pixmap.width() > 800){
+				QPixmap scaledpixmap = pixmap.scaledToWidth(800, Qt::SmoothTransformation);
+				ui->pictureLabel->setPixmap(scaledpixmap);
+			}else{
+				ui->pictureLabel->setPixmap(pixmap);
+			}
+		}
+		else if (urlOkay && (mPost.mImage.mData == NULL))
+		{
+			ui->expandButton->setDisabled(true);
+			ui->thumbnailLabel->setPixmap(FilesDefs::getPixmapFromQtResourcePath(LINK_IMAGE));
+		}
+		else
+		{
+			ui->expandButton->setDisabled(true);
+			ui->thumbnailLabel->setPixmap(sqpixmap2);
+		}
 	}
 
 
@@ -671,5 +741,3 @@ void PostedItem::toggleNotes()
 	}
 
 }
-
-
