@@ -445,10 +445,13 @@ QVariant RsGxsForumModel::textColorRole(const ForumModelPostEntry& fmpe,int /*co
     if( (fmpe.mPostFlags & ForumModelPostEntry::FLAG_POST_IS_MISSING))
         return QVariant(mTextColorMissing);
 
-    if(IS_MSG_UNREAD(fmpe.mMsgStatus) || (fmpe.mPostFlags & ForumModelPostEntry::FLAG_POST_IS_PINNED))
+    if(IS_MSG_UNREAD(fmpe.mMsgStatus))
         return QVariant(mTextColorUnread);
     else
-        return QVariant(mTextColorRead);
+	    if(fmpe.mPostFlags & ForumModelPostEntry::FLAG_POST_IS_PINNED)
+		    return QVariant(mTextColorPinned);
+	    else
+	        return QVariant(mTextColorRead);
 
 	return QVariant();
 }
@@ -593,10 +596,10 @@ QVariant RsGxsForumModel::pinnedRole(const ForumModelPostEntry& fmpe,int /*colum
 QVariant RsGxsForumModel::backgroundRole(const ForumModelPostEntry& fmpe,int /*column*/) const
 {
     if(fmpe.mPostFlags & ForumModelPostEntry::FLAG_POST_IS_PINNED)
-        return QVariant(QBrush(QColor(255,200,180)));
+        return QVariant(QBrush(mBackgroundColorPinned));
 
     if(mFilteringEnabled && (fmpe.mPostFlags & ForumModelPostEntry::FLAG_POST_PASSES_FILTER))
-        return QVariant(QBrush(QColor(255,240,210)));
+        return QVariant(QBrush(mBackgroundColorFiltered));
 
     return QVariant();
 }
@@ -669,8 +672,11 @@ QVariant RsGxsForumModel::displayRole(const ForumModelPostEntry& fmpe,int col) c
 									return QVariant(DateTime::formatDateTime(qtime));
     							}
 
-		case COLUMN_THREAD_DISTRIBUTION:
-		case COLUMN_THREAD_AUTHOR:{
+		case COLUMN_THREAD_DISTRIBUTION:	// passthrough // handled by delegate.
+		case COLUMN_THREAD_MSGID:
+        								return QVariant();
+		case COLUMN_THREAD_AUTHOR:
+    	{
 			QString name;
 			RsGxsId id = RsGxsId(fmpe.mAuthorId.toStdString());
 
@@ -680,7 +686,6 @@ QVariant RsGxsForumModel::displayRole(const ForumModelPostEntry& fmpe,int col) c
 				return name;
 			return QVariant(tr("[Unknown]"));
 		}
-		case COLUMN_THREAD_MSGID: return QVariant();
 #ifdef TODO
 	if (filterColumn == COLUMN_THREAD_CONTENT) {
 		// need content for filter

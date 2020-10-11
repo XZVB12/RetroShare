@@ -107,7 +107,7 @@ bool RsGxsMessageCleanUp::clean()
 				bool remove = store_period > 0 && ((meta->mPublishTs + store_period) < now) && !have_kids;
 
 				// check client does not want the message kept regardless of age
-				remove &= !(meta->mMsgStatus & GXS_SERV::GXS_MSG_STATUS_KEEP);
+				remove &= !(meta->mMsgStatus & GXS_SERV::GXS_MSG_STATUS_KEEP_FOREVER);
 
 				// if not subscribed remove messages (can optimise this really)
 				remove = remove ||  (grpMeta->mSubscribeFlags & GXS_SERV::GROUP_SUBSCRIBE_NOT_SUBSCRIBED);
@@ -215,7 +215,8 @@ bool RsGxsIntegrityCheck::check()
 						        rsReputations->overallReputationLevel(
 						            grp->metaData->mAuthorId ) >
 						        RsReputationLevel::LOCALLY_NEGATIVE )
-							used_gxs_ids.insert(std::make_pair(grp->metaData->mAuthorId, RsIdentityUsage(mGenExchangeClient->serviceType(), RsIdentityUsage::GROUP_AUTHOR_KEEP_ALIVE,grp->grpId)));
+							used_gxs_ids.insert(std::make_pair(grp->metaData->mAuthorId, RsIdentityUsage(RsServiceType(mGenExchangeClient->serviceType()),
+                                                                                                         RsIdentityUsage::GROUP_AUTHOR_KEEP_ALIVE,grp->grpId)));
 					}
 				}
 			}
@@ -404,7 +405,12 @@ bool RsGxsIntegrityCheck::check()
 					        rsReputations->overallReputationLevel(
 					            msg->metaData->mAuthorId ) >
 					        RsReputationLevel::LOCALLY_NEGATIVE )
-						used_gxs_ids.insert(std::make_pair(msg->metaData->mAuthorId,RsIdentityUsage(mGenExchangeClient->serviceType(),RsIdentityUsage::MESSAGE_AUTHOR_KEEP_ALIVE,msg->metaData->mGroupId,msg->metaData->mMsgId))) ;
+						used_gxs_ids.insert(std::make_pair(msg->metaData->mAuthorId,RsIdentityUsage(RsServiceType(mGenExchangeClient->serviceType()),
+                                                                                                    RsIdentityUsage::MESSAGE_AUTHOR_KEEP_ALIVE,
+                                                                                                    msg->metaData->mGroupId,
+                                                                                                    msg->metaData->mMsgId,
+                                                                                                    msg->metaData->mParentId,
+                                                                                                    msg->metaData->mThreadId))) ;
 				}
 			}
 
