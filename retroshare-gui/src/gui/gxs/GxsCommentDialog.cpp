@@ -42,7 +42,9 @@ GxsCommentDialog::GxsCommentDialog(QWidget *parent, const RsGxsId &default_autho
 	
 void GxsCommentDialog::init(const RsGxsId& default_author)
 {
-	/* Set header resize modes and initial section sizes */
+    ui->refreshButton->hide();	// this is not needed anymore. Let's keep this piece of code for some time just in case.
+
+    /* Set header resize modes and initial section sizes */
 	QHeaderView * ttheader = ui->treeWidget->header () ;
 	ttheader->resizeSection (0, 440);
 
@@ -84,6 +86,13 @@ GxsCommentDialog::~GxsCommentDialog()
 	delete(ui);
 }
 
+void GxsCommentDialog::commentClear()
+{
+    ui->treeWidget->clear();
+    mGrpId.clear();
+    mMostRecentMsgId.clear();
+    mMsgVersions.clear();
+}
 void GxsCommentDialog::commentLoad(const RsGxsGroupId &grpId, const std::set<RsGxsMessageId>& msg_versions,const RsGxsMessageId& most_recent_msgId,bool use_cache)
 {
 	std::cerr << "GxsCommentDialog::commentLoad(" << grpId << ", most recent msg version: " << most_recent_msgId << ")";

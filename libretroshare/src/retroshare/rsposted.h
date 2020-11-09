@@ -116,6 +116,9 @@ enum class RsPostedEventCode: uint8_t
 	READ_STATUS_CHANGED      = 0x06,
 	STATISTICS_CHANGED       = 0x07,
     MESSAGE_VOTES_UPDATED    = 0x08,
+    SYNC_PARAMETERS_UPDATED  = 0x09,
+    NEW_COMMENT              = 0x0a,
+    NEW_VOTE                 = 0x0b,
 };
 
 
