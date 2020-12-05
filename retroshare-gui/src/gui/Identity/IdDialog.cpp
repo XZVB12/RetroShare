@@ -439,7 +439,8 @@ void IdDialog::handleEvent_main_thread(std::shared_ptr<const RsEvent> event)
 		case RsGxsCircleEventCode::CIRCLE_MEMBERSHIP_LEAVE:
 		case RsGxsCircleEventCode::CIRCLE_MEMBERSHIP_ID_REMOVED_FROM_INVITEE_LIST:
 		case RsGxsCircleEventCode::NEW_CIRCLE:
-		case RsGxsCircleEventCode::CACHE_DATA_UPDATED:
+        case RsGxsCircleEventCode::CIRCLE_DELETED:
+        case RsGxsCircleEventCode::CACHE_DATA_UPDATED:
 
 			updateCircles();
 		default:
@@ -597,6 +598,10 @@ void IdDialog::loadCircles(const std::list<RsGroupMetaData>& groupInfo)
 
     mStateHelper->setActive(CIRCLESDIALOG_GROUPMETA, true);
 
+    // Disable sorting while updating which avoids calling sortChildren() in child(i), causing heavy loads when adding
+    // many items to a tree.
+    ui->treeWidget_membership->setSortingEnabled(false);
+
     std::vector<bool> expanded_top_level_items;
     std::set<RsGxsCircleId> expanded_circle_items;
     saveExpandedCircleItems(expanded_top_level_items,expanded_circle_items);
@@ -730,6 +735,15 @@ void IdDialog::loadCircles(const std::list<RsGroupMetaData>& groupInfo)
 		for(auto index:to_delete)
 			delete item->takeChild(index);	// delete items starting from the largest index, because otherwise the count changes while deleting...
 
+        // Now make a list of items to add, but only add them at once at the end of the loop, to avoid a quadratic cost.
+        QList<QTreeWidgetItem*> new_sub_items;
+
+        // ...and make a map of which index each item has, to make the search logarithmic
+        std::map<QString,uint32_t> subitem_indices;
+
+        for(uint32_t k=0; k < (uint32_t)item->childCount(); ++k)
+            subitem_indices[item->child(k)->data(CIRCLEGROUP_CIRCLE_COL_GROUPID,Qt::UserRole).toString()] = k;
+
 		for(std::map<RsGxsId,uint32_t>::const_iterator it(details.mSubscriptionFlags.begin());it!=details.mSubscriptionFlags.end();++it)
 		{
 #ifdef ID_DEBUG
@@ -745,15 +759,11 @@ void IdDialog::loadCircles(const std::list<RsGroupMetaData>& groupInfo)
             int subitem_index = -1;
 
 			// see if the item already exists
-			for(uint32_t k=0; k < (uint32_t)item->childCount(); ++k)
-				if(item->child(k)->data(CIRCLEGROUP_CIRCLE_COL_GROUPID,Qt::UserRole).toString().toStdString() == it->first.toStdString())
-				{
-                    subitem_index = k;
-#ifdef ID_DEBUG
-					std::cerr << " found existing sub item." << std::endl;
-#endif
-					break ;
-				}
+
+            auto itt = subitem_indices.find(QString::fromStdString(it->first.toStdString()));
+
+            if(itt != subitem_indices.end())
+                subitem_index = itt->second;
 
 			if(!(invited || subscrb))
 			{
@@ -819,7 +829,7 @@ void IdDialog::loadCircles(const std::list<RsGroupMetaData>& groupInfo)
 
 				//subitem->setIcon(RSID_COL_NICKNAME, QIcon(pixmap));
 
-				item->addChild(subitem) ;
+                new_sub_items.push_back(subitem);
 			}
             else
                 subitem = item->child(subitem_index);
@@ -851,6 +861,9 @@ void IdDialog::loadCircles(const std::list<RsGroupMetaData>& groupInfo)
 			}
 		}    
 
+        // add all items
+        item->addChildren(new_sub_items);
+
 		// The bullet colors below are for the *Membership*. This is independent from admin rights, which cannot be shown as a color.
 		// Admin/non admin is shows using Bold font.
 
@@ -861,6 +874,8 @@ void IdDialog::loadCircles(const std::list<RsGroupMetaData>& groupInfo)
 		else
 			item->setIcon(CIRCLEGROUP_CIRCLE_COL_GROUPNAME,FilesDefs::getIconFromQtResourcePath(IMAGE_UNKNOWN)) ;
 	}
+    ui->treeWidget_membership->setSortingEnabled(true);
+
     restoreExpandedCircleItems(expanded_top_level_items,expanded_circle_items);
 }
 
