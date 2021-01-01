@@ -299,12 +299,13 @@ void RsGenExchange::tick()
 
 		if(mIntegrityCheck->isDone())
 		{
-			RS_STACK_MUTEX(mGenMtx) ;
-
             std::vector<RsGxsGroupId> grpIds;
             GxsMsgReq msgIds;
 
-			mIntegrityCheck->getDeletedIds(grpIds, msgIds);
+            {
+                RS_STACK_MUTEX(mGenMtx) ;
+                mIntegrityCheck->getDeletedIds(grpIds, msgIds);
+            }
 
             if(!msgIds.empty())
             {
@@ -319,9 +320,12 @@ void RsGenExchange::tick()
                     deleteGroup(token2,grpId);
                 }
 
-			delete mIntegrityCheck;
-			mIntegrityCheck = NULL;
-			mChecking = false;
+            {
+                RS_STACK_MUTEX(mGenMtx) ;
+                delete mIntegrityCheck;
+                mIntegrityCheck = NULL;
+                mChecking = false;
+            }
 		}
 	}
 }
@@ -3170,6 +3174,10 @@ void RsGenExchange::processRecvdMessages()
             for(auto& nxs_msg: msgs_to_store)
             {
                 RsGxsMsgItem *item = dynamic_cast<RsGxsMsgItem*>(mSerialiser->deserialise(nxs_msg->msg.bin_data,&nxs_msg->msg.bin_len));
+
+                if(!item)
+                    continue;
+
                 item->meta = *nxs_msg->metaData;
 
 				RsGxsMsgChange* c = new RsGxsMsgChange(RsGxsNotify::TYPE_RECEIVED_NEW, item->meta.mGroupId, item->meta.mMsgId,false);

@@ -55,6 +55,12 @@
         </item>
         <item>
          <widget class="QLabel" name="label_groupName">
+          <property name="font">
+           <font>
+            <family>Segoe UI</family>
+            <pointsize>10</pointsize>
+           </font>
+          </property>
           <property name="text">
            <string>WireGroupName</string>
           </property>
@@ -133,6 +139,20 @@
           <widget class="QToolButton" name="toolButton_subscribe">
            <property name="text">
             <string>Sub/Un</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QPushButton" name="editButton">
+           <property name="toolTip">
+            <string>Edit Profile</string>
+           </property>
+           <property name="text">
+            <string/>
+           </property>
+           <property name="icon">
+            <iconset resource="../icons.qrc">
+             <normaloff>:/icons/mail/compose.png</normaloff>:/icons/mail/compose.png</iconset>
            </property>
           </widget>
          </item>
