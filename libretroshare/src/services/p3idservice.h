@@ -261,10 +261,7 @@ public:
     virtual bool createIdentity(uint32_t& token, RsIdentityParameters &params) override;
 
 	/// @see RsIdentity
-	bool updateIdentity(RsGxsIdGroup& identityData) override;
-
-	RS_DEPRECATED
-    virtual bool updateIdentity(uint32_t& token, RsGxsIdGroup &group) override;
+    bool updateIdentity( const RsGxsId& id, const std::string& name, const RsGxsImage& avatar, bool pseudonimous, const std::string& pgpPassword) override;
 
 	/// @see RsIdentity
 	bool deleteIdentity(RsGxsId& id) override;
@@ -407,8 +404,9 @@ protected:
     // Overloads RsGxsGenExchange
     virtual bool acceptNewGroup(const RsGxsGrpMetaData *grpMeta) override ;
 
-    // Overloaded from GxsTokenQueue for Request callbacks.
-    virtual void handleResponse(uint32_t token, uint32_t req_type) override;
+	// Overloaded from GxsTokenQueue for Request callbacks.
+	virtual void handleResponse(uint32_t token, uint32_t req_type
+	                            , RsTokenService::GxsRequestStatus status) override;
 
 	// Overloaded from RsTickEvent.
     virtual void handle_event(uint32_t event_type, const std::string &elabel) override;
@@ -561,7 +559,7 @@ private:
 	void cleanUnusedKeys() ;
 	void slowIndicateConfigChanged() ;
 
-	virtual void timeStampKey(const RsGxsId& id, const RsIdentityUsage& reason) ;
+	virtual void timeStampKey(const RsGxsId& id, const RsIdentityUsage& reason) override;
 	rstime_t locked_getLastUsageTS(const RsGxsId& gxs_id);
 
 	std::string genRandomId(int len = 20);

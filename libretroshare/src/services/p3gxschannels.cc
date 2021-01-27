@@ -93,13 +93,17 @@ p3GxsChannels::p3GxsChannels(
     mLastDistantSearchNotificationTS = 0;
 	mCommentService = new p3GxsCommentService(this,  RS_SERVICE_GXS_TYPE_CHANNELS);
 
-	RsTickEvent::schedule_in(CHANNEL_PROCESS, 0);
-
+    // This is not needed since it just loads all channel data ever 5 mins which takes a lot
+    // of useless CPU/memory.
+    //
+    //     RsTickEvent::schedule_in(CHANNEL_PROCESS, 0);
+    //
 	// Test Data disabled in repo.
-	//RsTickEvent::schedule_in(CHANNEL_TESTEVENT_DUMMYDATA, DUMMYDATA_PERIOD);
+    //
+    //     RsTickEvent::schedule_in(CHANNEL_TESTEVENT_DUMMYDATA, DUMMYDATA_PERIOD);
+
     mGenToken = 0;
     mGenCount = 0;
-
 }
 
 
@@ -1130,12 +1134,14 @@ void p3GxsChannels::handleUnprocessedPost(const RsGxsChannelPost &msg)
 
 
 	// Overloaded from GxsTokenQueue for Request callbacks.
-void p3GxsChannels::handleResponse(uint32_t token, uint32_t req_type)
+void p3GxsChannels::handleResponse(uint32_t token, uint32_t req_type
+                                   , RsTokenService::GxsRequestStatus status)
 {
 #ifdef GXSCHANNELS_DEBUG
-	std::cerr << "p3GxsChannels::handleResponse(" << token << "," << req_type << ")";
-	std::cerr << std::endl;
+	std::cerr << "p3GxsChannels::handleResponse(" << token << "," << req_type << "," << status << ")" << std::endl;
 #endif // GXSCHANNELS_DEBUG
+	if (status != RsTokenService::COMPLETE)
+		return; //For now, only manage Complete request
 
 	// stuff.
 	switch(req_type)
@@ -1771,12 +1777,13 @@ bool p3GxsChannels::createComment(RsGxsComment& comment) // deprecated
 	return true;
 }
 
-bool p3GxsChannels::subscribeToChannel(
-        const RsGxsGroupId& groupId, bool subscribe )
+bool p3GxsChannels::subscribeToChannel( const RsGxsGroupId& groupId, bool subscribe )
 {
 	uint32_t token;
-	if( !subscribeToGroup(token, groupId, subscribe)
-	        || waitToken(token) != RsTokenService::COMPLETE ) return false;
+    if( !subscribeToGroup(token, groupId, subscribe) || waitToken(token) != RsTokenService::COMPLETE ) return false;
+
+    RsGxsGroupId grpId;
+    acknowledgeGrp(token,grpId);
 	return true;
 }
 
@@ -1785,6 +1792,10 @@ bool p3GxsChannels::markRead(const RsGxsGrpMsgIdPair& msgId, bool read)
 	uint32_t token;
 	setMessageReadStatus(token, msgId, read);
 	if(waitToken(token) != RsTokenService::COMPLETE ) return false;
+
+    RsGxsGrpMsgIdPair p;
+    acknowledgeMsg(token,p);
+
 	return true;
 }
 

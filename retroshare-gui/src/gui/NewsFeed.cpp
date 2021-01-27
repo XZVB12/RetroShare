@@ -33,8 +33,10 @@
 #include <retroshare/rsposted.h>
 
 #include "util/qtthreadsutils.h"
+#include "feeds/BoardsCommentsItem.h"
 #include "feeds/ChatMsgItem.h"
 #include "feeds/GxsCircleItem.h"
+#include "feeds/ChannelsCommentsItem.h"
 #include "feeds/GxsChannelGroupItem.h"
 #include "feeds/GxsChannelPostItem.h"
 #include "feeds/GxsForumGroupItem.h"
@@ -111,7 +113,7 @@ NewsFeed::NewsFeed(QWidget *parent) : MainPage(parent), ui(new Ui::NewsFeed),
 
 QString hlp_str = tr(
  " <h1><img width=\"32\" src=\":/icons/help_64.png\">&nbsp;&nbsp;News Feed</h1>                                                          \
-   <p>The Log Feed displays the last events on your network, sorted by the time you received them.                \
+   <p>The Activity Feed displays the last events on your network, sorted by the time you received them.                \
    This gives you a summary of the activity of your friends.                                                       \
    You can configure which events to show by pressing on <b>Options</b>. </p>                                      \
    <p>The various events shown are:                                                                                \
@@ -240,6 +242,9 @@ void NewsFeed::handlePostedEvent(std::shared_ptr<const RsEvent> event)
 	case RsPostedEventCode::NEW_MESSAGE:
 		addFeedItem( new PostedItem(this, NEWSFEED_POSTEDMSGLIST, pe->mPostedGroupId, pe->mPostedMsgId, false, true));
 		break;
+	case RsPostedEventCode::NEW_COMMENT:
+		addFeedItem( new BoardsCommentsItem(this, NEWSFEED_POSTEDMSGLIST, pe->mPostedGroupId, pe->mPostedMsgId, false, true));
+		break;
 	default: break;
 	}
 }
@@ -284,6 +289,9 @@ void NewsFeed::handleChannelEvent(std::shared_ptr<const RsEvent> event)
 	case RsChannelEventCode::UPDATED_MESSAGE:  // [[fallthrough]];
 	case RsChannelEventCode::NEW_MESSAGE:
 		addFeedItem(new GxsChannelPostItem(this, NEWSFEED_CHANNELNEWLIST, pe->mChannelGroupId, pe->mChannelMsgId, false, true));
+		break;
+	case RsChannelEventCode::NEW_COMMENT:
+		addFeedItem(new ChannelsCommentsItem(this, NEWSFEED_CHANNELNEWLIST, pe->mChannelGroupId, pe->mChannelMsgId, false, true));
 		break;
 	case RsChannelEventCode::RECEIVED_PUBLISH_KEY:
 		addFeedItem(new GxsChannelGroupItem(this, NEWSFEED_CHANNELPUBKEYLIST, pe->mChannelGroupId, false, true));
@@ -455,7 +463,7 @@ void NewsFeed::handleSecurityEvent(std::shared_ptr<const RsEvent> event)
 #endif
 	uint flags = Settings->getNewsFeedFlags();
 
-	if(e.mErrorCode == RsAuthSslError::PEER_REFUSED_CONNECTION)
+	if(e.mErrorCode == RsAuthSslError::PEER_REFUSED_CONNECTION && (flags & RS_FEED_TYPE_SECURITY_IP))
 	{
 		addFeedItemIfUnique(new PeerItem(this, NEWSFEED_PEERLIST, e.mSslId, PEER_TYPE_HELLO, false), true );
 		return;

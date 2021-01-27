@@ -18,6 +18,14 @@ HeaderFrame > QFrame#frame > QLabel#headerLabel {
 	color: rgb(255, 255, 255);
 }
 
+AvatarDialog QFrame#infoframe
+{
+	border: 1px solid #DCDC41;
+	border-radius: 6px;
+	background: #FFFFD7;
+	background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #FFFFD7, stop:1 #FFFFB2);
+}
+
 /* GenCertDialog */
 
 GenCertDialog QLabel#genprofileinfo_label, QLabel#header_label, QLabel#entropy_label
@@ -137,7 +145,7 @@ CreateCircleDialog QPushButton#createButton, CreateLobbyDialog QPushButton#creat
 IdEditDialog QPushButton#createButton, CreateGxsForumMsg QPushButton#postButton,
 GxsCreateCommentDialog QPushButton#postButton, GxsGroupDialog QPushButton#createButton,
 PulseAddDialog QPushButton#pushButton_Post, PulseTopLevel QToolButton#toolButton_follow,
-PulseViewGroup QToolButton#toolButton_follow{
+PulseViewGroup QToolButton#toolButton_follow, WikiEditDialog QPushButton#pushButton_Submit{
 	font: bold;
 	font-size: 15px;
 	color: white;
@@ -154,7 +162,8 @@ CreateCircleDialog QPushButton#createButton:hover, CreateLobbyDialog QPushButton
 IdEditDialog QPushButton#createButton:hover, CreateGxsForumMsg QPushButton#postButton:hover,
 GxsCreateCommentDialog QPushButton#postButton:hover, GxsGroupDialog QPushButton#createButton:hover,
 ShareManager QPushButton#closeButton:hover, PulseAddDialog QPushButton#pushButton_Post:hover, 
-PulseTopLevel QToolButton#toolButton_follow:hover, PulseViewGroup QToolButton#toolButton_follow:hover{
+PulseTopLevel QToolButton#toolButton_follow:hover, PulseViewGroup QToolButton#toolButton_follow:hover,
+WikiEditDialog QPushButton#pushButton_Submit:hover{
 	background: #03b1f3;
 	border-radius: 4px;
 	min-width: 4em;
@@ -214,7 +223,7 @@ SearchDialog QPushButton#pushButtonSearch:hover{
 
 CreateGxsForumMsg QPushButton#postButton:disabled, PostedCreatePostDialog QPushButton#submitButton:disabled,
 CreateGxsChannelMsg QPushButton#postButton:disabled, GxsCreateCommentDialog QPushButton#postButton:disabled,
-PulseAddDialog QPushButton#pushButton_Post:disabled {
+PulseAddDialog QPushButton#pushButton_Post:disabled, WikiEditDialog QPushButton#pushButton_Submit:disabled {
 	font: bold;
 	font-size: 15px;
 	color: white;
@@ -1105,13 +1114,12 @@ MainWindow QListWidget {
 }
 
 PulseTopLevel QFrame#frame, PulseViewGroup QFrame#frame, PulseReply QFrame#frame {
-	border: 2px solid #7ecbfb;
-	border-radius: 6px;
+	border: 2px solid #c4cfd6;
 	background: white;
 }
 
 PulseAddDialog QTextEdit#textEdit_Pulse {
-	border: 2px solid #7ecbfb;
+	border: 2px solid #c4cfd6;
 	border-radius: 6px;
 	background: white;
 }
@@ -1125,7 +1133,11 @@ PulseAddDialog QLabel#label_groupName {
 }
 
 PulseReply #line_replyLine , PulseMessage #line{
-	color: #7ecbfb;
+	color: #c4cfd6;
+}
+
+PulseReply QLabel#label_groupName{
+	color: #5b7083;
 }
 
 WireDialog QLabel#label_viewMode {
@@ -1136,3 +1148,46 @@ WireGroupDialog QFrame#frame {
 	background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #9BDBF9, stop:1 #1592CD);
 	border: 0px;
 }
+
+PhotoShare QPushButton#pushButton_YourAlbums, QPushButton#pushButton_SubscribedAlbums, 
+QPushButton#pushButton_SharedAlbums {
+	font-size: 12pt;
+}
+
+AlbumItem QFrame#albumFrame {
+	border: 2px solid #CCCCCC;
+	border-radius: 10px
+}
+
+PhotoItem QFrame#photoFrame {
+	border: 2px solid #CCCCCC;
+	border-radius: 10px
+}
+
+PhotoItem QWidget:hover {
+	background-color: #7ecbfb;
+}
+
+PhotoSlideShow QLabel#albumLabel {
+	font-size: 12pt;
+}
+
+ChannelsCommentsItem QFrame#mainFrame, BoardsCommentsItem QFrame#mainFrame {
+	background-color: white;
+}
+
+ChannelsCommentsItem QLabel#newCommentLabel, BoardsCommentsItem QLabel#newCommentLabel {
+	font: 14px;
+	font: bold;
+}
+
+ChannelsCommentsItem QLabel#subjectLabel, ChannelsCommentsItem QLabel#titleLabel , QLabel#nameLabel {
+	font: 14px;
+	font: bold;
+}
+
+BoardsCommentsItem QLabel#subjectLabel, QLabel#titleLabel , QLabel#nameLabel {
+	font: 14px;
+	font: bold;
+}
+

@@ -151,27 +151,26 @@ RsIdentity* rsIdentity = nullptr;
 /******************* Startup / Tick    ******************************************/
 /********************************************************************************/
 
-p3IdService::p3IdService(
-        RsGeneralDataService *gds, RsNetworkExchangeService *nes,
-        PgpAuxUtils *pgpUtils ) :
-    RsGxsIdExchange( gds, nes, new RsGxsIdSerialiser(),
-                     RS_SERVICE_GXS_TYPE_GXSID, idAuthenPolicy() ),
-    RsIdentity(static_cast<RsGxsIface&>(*this)), GxsTokenQueue(this),
-    RsTickEvent(), mKeyCache(GXSID_MAX_CACHE_SIZE, "GxsIdKeyCache"),
-    mIdMtx("p3IdService"), mNes(nes), mPgpUtils(pgpUtils)
+p3IdService::p3IdService( RsGeneralDataService *gds
+                          , RsNetworkExchangeService *nes
+                          , PgpAuxUtils *pgpUtils )
+    : RsGxsIdExchange( gds, nes, new RsGxsIdSerialiser(),
+                       RS_SERVICE_GXS_TYPE_GXSID, idAuthenPolicy() )
+    , RsIdentity(static_cast<RsGxsIface&>(*this))
+    , GxsTokenQueue(this), RsTickEvent(), p3Config()
+    , mKeyCache(GXSID_MAX_CACHE_SIZE, "GxsIdKeyCache")
+    , mBgSchedule_Active(false), mBgSchedule_Mode(0)
+    , mIdMtx("p3IdService"), mNes(nes), mPgpUtils(pgpUtils)
+    , mLastConfigUpdate(0), mOwnIdsLoaded(false)
+    , mAutoAddFriendsIdentitiesAsContacts(true) /*default*/
+    , mMaxKeepKeysBanned(MAX_KEEP_KEYS_BANNED_DEFAULT)
 {
-	mBgSchedule_Mode = 0;
-    mBgSchedule_Active = false;
-    mLastKeyCleaningTime = time(NULL) - int(MAX_DELAY_BEFORE_CLEANING * 0.9) ;
-    mLastConfigUpdate = 0 ;
-    mOwnIdsLoaded = false ;
-	mAutoAddFriendsIdentitiesAsContacts = true; // default
-    mMaxKeepKeysBanned = MAX_KEEP_KEYS_BANNED_DEFAULT;
+	mLastKeyCleaningTime = time(NULL) - int(MAX_DELAY_BEFORE_CLEANING * 0.9) ;
 
 	// Kick off Cache Testing, + Others.
+	RsTickEvent::schedule_now(GXSID_EVENT_CACHEOWNIDS);//First Thing to do
 	RsTickEvent::schedule_in(GXSID_EVENT_PGPHASH, PGPHASH_PERIOD);
 	RsTickEvent::schedule_in(GXSID_EVENT_REPUTATION, REPUTATION_PERIOD);
-	RsTickEvent::schedule_now(GXSID_EVENT_CACHEOWNIDS);
 
 	//RsTickEvent::schedule_in(GXSID_EVENT_CACHETEST, CACHETEST_PERIOD);
 
@@ -644,6 +643,7 @@ void p3IdService::notifyChanges(std::vector<RsGxsNotify *> &changes)
 					case RsGxsNotify::TYPE_PROCESSED:	break ; // Happens when the group is subscribed. This is triggered by RsGenExchange::subscribeToGroup, so better not
                         										// call it again from here!!
 
+                    case RsGxsNotify::TYPE_UPDATED:
                     case RsGxsNotify::TYPE_PUBLISHED:
                     {
                         auto ev = std::make_shared<RsGxsIdentityEvent>();
@@ -680,6 +680,26 @@ void p3IdService::notifyChanges(std::vector<RsGxsNotify *> &changes)
 					{
 						uint32_t token;
 						RsGenExchange::subscribeToGroup(token, gid, true);
+
+                        // we need to acknowledge the token in a async process
+
+                        RsThread::async( [this,token]()
+                        {
+                            std::chrono::milliseconds maxWait = std::chrono::milliseconds(10000);
+                            std::chrono::milliseconds checkEvery = std::chrono::milliseconds(100);
+
+                            auto timeout = std::chrono::steady_clock::now() + maxWait;	// wait for 10 secs at most
+                            auto st = requestStatus(token);
+
+                            while( !(st == RsTokenService::FAILED || st >= RsTokenService::COMPLETE) && std::chrono::steady_clock::now() < timeout )
+                            {
+                                std::this_thread::sleep_for(checkEvery);
+                                st = requestStatus(token);
+                            }
+
+                            RsGxsGroupId grpId;
+                            acknowledgeGrp(token,grpId);
+                        });
 					}
 
                 }
@@ -1042,37 +1062,87 @@ bool p3IdService::createIdentity(uint32_t& token, RsIdentityParameters &params)
     return true;
 }
 
-bool p3IdService::updateIdentity(RsGxsIdGroup& identityData)
+bool p3IdService::updateIdentity( const RsGxsId& id, const std::string& name, const RsGxsImage& avatar, bool pseudonimous, const std::string& pgpPassword)
 {
+    // 1 - get back the identity group
+
+    std::vector<RsGxsIdGroup> idsInfo;
+
+    if(!getIdentitiesInfo(std::set<RsGxsId>{ id },  idsInfo))
+            return false;
+
+    RsGxsIdGroup& group(idsInfo[0]);
+
+    // 2 - update it with the new information
+
+    group.mMeta.mGroupName = name;
+    group.mMeta.mCircleType = GXS_CIRCLE_TYPE_PUBLIC ;
+    group.mImage = avatar;
+
+    if(!pseudonimous)
+    {
+#warning csoler 2020-01-21: Backward compatibility issue to fix here in v0.7.0
+
+        // This is a hack, because a bad decision led to having RSGXSID_GROUPFLAG_REALID be equal to GXS_SERV::FLAG_PRIVACY_PRIVATE.
+        // In order to keep backward compatibility, we'll also add the new value
+        // When the ID is not PGP linked, the group flag cannot be let empty, so we use PUBLIC.
+        //
+        // The correct combination of flags should be:
+        //		PGP-linked:		GXS_SERV::FLAGS_PRIVACY_PUBLIC | RSGXSID_GROUPFLAG_REALID
+        //		Anonymous :		GXS_SERV::FLAGS_PRIVACY_PUBLIC
+
+        group.mMeta.mGroupFlags |= GXS_SERV::FLAG_PRIVACY_PRIVATE;	// this is also equal to RSGXSID_GROUPFLAG_REALID_deprecated
+        group.mMeta.mGroupFlags |= RSGXSID_GROUPFLAG_REALID;
+
+        // The current version should be able to produce new identities that old peers will accept as well.
+        // In the future, we need to:
+        //     - set the current group flags here (see above)
+        //	   - replace all occurences of RSGXSID_GROUPFLAG_REALID_deprecated by RSGXSID_GROUPFLAG_REALID in the code.
+    }
+    else
+        group.mMeta.mGroupFlags |= GXS_SERV::FLAG_PRIVACY_PUBLIC;
+
 	uint32_t token;
-	if(!updateGroup(token, identityData))
+    bool ret = true;
+
+    // Cache pgp passphrase to allow a proper re-signing of the group data
+
+    if(!pseudonimous && !pgpPassword.empty())
+    {
+        if(!rsNotify->cachePgpPassphrase(pgpPassword))
+        {
+            RsErr() << __PRETTY_FUNCTION__ << " Failure caching password" << std::endl;
+            ret = false;
+            goto LabelUpdateIdentityCleanup;
+        }
+
+        if(!rsNotify->setDisableAskPassword(true))
+        {
+            RsErr() << __PRETTY_FUNCTION__ << " Failure disabling password user request" << std::endl;
+            ret = false;
+            goto LabelUpdateIdentityCleanup;
+        }
+    }
+
+    if(!updateGroup(token, group))
 	{
-		std::cerr << __PRETTY_FUNCTION__ << "Error! Failed updating group."
-		          << std::endl;
-		return false;
+        std::cerr << __PRETTY_FUNCTION__ << "Error! Failed updating group." << std::endl;
+        ret = false;
+        goto LabelUpdateIdentityCleanup;
 	}
 
 	if(waitToken(token) != RsTokenService::COMPLETE)
 	{
-		std::cerr << __PRETTY_FUNCTION__ << "Error! GXS operation failed."
-		          << std::endl;
-		return false;
+        std::cerr << __PRETTY_FUNCTION__ << "Error! GXS operation failed." << std::endl;
+        ret = false;
+        goto LabelUpdateIdentityCleanup;
 	}
 
-	return true;
-}
+LabelUpdateIdentityCleanup:
+    if(!pseudonimous && !pgpPassword.empty())
+        rsNotify->clearPgpPassphrase();
 
-bool p3IdService::updateIdentity(uint32_t& token, RsGxsIdGroup &group)
-{
-#ifdef DEBUG_IDS
-    std::cerr << "p3IdService::updateIdentity()";
-    std::cerr << std::endl;
-#endif
-    group.mMeta.mCircleType = GXS_CIRCLE_TYPE_PUBLIC ;
-
-    updateGroup(token, group);
-
-    return false;
+    return ret;
 }
 
 bool p3IdService::deleteIdentity(RsGxsId& id)
@@ -4427,7 +4497,7 @@ void p3IdService::generateDummy_OwnIds()
 
 	/* grab all the gpg ids... and make some ids */
 
-	RsPgpId ownId = mPgpUtils->getPGPOwnId();
+	/*RsPgpId ownId = */mPgpUtils->getPGPOwnId();
 
 #if 0
 	// generate some ownIds.
@@ -4643,36 +4713,37 @@ void p3IdService::checkPeerForIdentities()
 
 
 // Overloaded from GxsTokenQueue for Request callbacks.
-void p3IdService::handleResponse(uint32_t token, uint32_t req_type)
+void p3IdService::handleResponse(uint32_t token, uint32_t req_type
+                                 , RsTokenService::GxsRequestStatus status)
 {
 #ifdef DEBUG_IDS
-	std::cerr << "p3IdService::handleResponse(" << token << "," << req_type << ")";
-	std::cerr << std::endl;
+	std::cerr << "p3IdService::handleResponse(" << token << "," << req_type << "," << status << ")" << std::endl;
 #endif // DEBUG_IDS
 
 	// stuff.
 	switch(req_type)
 	{
 	case GXSIDREQ_CACHEOWNIDS:
-		cache_load_ownids(token);
+		if (status == RsTokenService::COMPLETE) cache_load_ownids(token);
+		if (status == RsTokenService::CANCELLED) RsTickEvent::schedule_now(GXSID_EVENT_CACHEOWNIDS);//Cancelled by time-out so ask a new time
 		break;
 	case GXSIDREQ_CACHELOAD:
-		cache_load_for_token(token);
+		if (status == RsTokenService::COMPLETE) cache_load_for_token(token);
 		break;
 	case GXSIDREQ_PGPHASH:
-		pgphash_handlerequest(token);
+		if (status == RsTokenService::COMPLETE) pgphash_handlerequest(token);
 		break;
 	case GXSIDREQ_RECOGN:
-		recogn_handlerequest(token);
+		if (status == RsTokenService::COMPLETE) recogn_handlerequest(token);
 		break;
 	case GXSIDREQ_CACHETEST:
-		cachetest_handlerequest(token);
+		if (status == RsTokenService::COMPLETE) cachetest_handlerequest(token);
 		break;
 	case GXSIDREQ_OPINION:
-		opinion_handlerequest(token);
+		if (status == RsTokenService::COMPLETE) opinion_handlerequest(token);
 		break;
 	case GXSIDREQ_SERIALIZE_TO_MEMORY:
-		handle_get_serialized_grp(token);
+		if (status == RsTokenService::COMPLETE) handle_get_serialized_grp(token);
 		break;
 	default:
 		std::cerr << "p3IdService::handleResponse() Unknown Request Type: "
