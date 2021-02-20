@@ -60,11 +60,10 @@ static const uint32_t NODE_DETAILS_UPDATE_DELAY = 5;	// update each node every 5
 
 RsFriendListModel::RsFriendListModel(QObject *parent)
     : QAbstractItemModel(parent)
+    , mDisplayGroups(true), mDisplayStatusString(true)
+    , mLastInternalDataUpdate(0), mLastNodeUpdate(0)
 {
-    mDisplayGroups = true;
-    mFilterStrings.clear();
-    mLastNodeUpdate=0;
-    mLastInternalDataUpdate=0;
+	mFilterStrings.clear();
 }
 
 RsFriendListModel::EntryIndex::EntryIndex()
@@ -608,6 +607,10 @@ QVariant RsFriendListModel::fontRole(const EntryIndex& e, int col) const
 		case RS_STATUS_INACTIVE:
 		{
 			QFont font ;
+			QTreeView* myParent = dynamic_cast<QTreeView*>(QAbstractItemModel::parent());
+			if (myParent)
+				font = myParent->font();
+
 			font.setBold(true);
 
 			return QVariant(font);

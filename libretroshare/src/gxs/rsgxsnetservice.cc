@@ -2039,7 +2039,7 @@ void RsGxsNetService::debugDump()
     for(ServerMsgMap::const_iterator it(mServerMsgUpdateMap.begin());it!=mServerMsgUpdateMap.end();++it)
     {
         RsGxsGrpMetaTemporaryMap::const_iterator it2 = grpMetas.find(it->first) ;
-        RsGxsGrpMetaData *grpMeta = (it2 != grpMetas.end())? it2->second : NULL;
+        auto grpMeta = (it2 != grpMetas.end())? it2->second : (std::shared_ptr<RsGxsGrpMetaData>()) ;
         std::string subscribe_string = (grpMeta==NULL)?"Unknown" :  ((grpMeta->mSubscribeFlags & GXS_SERV::GROUP_SUBSCRIBE_SUBSCRIBED)?" Subscribed":" NOT Subscribed") ;
 
 	GXSNETDEBUG__G(it->first) << "    Grp:" << it->first << " last local modification (secs ago): " << nice_time_stamp(time(NULL),it->second.msgUpdateTS) << ", " << subscribe_string  << std::endl;
@@ -2175,15 +2175,19 @@ void RsGxsNetService::updateServerSyncTS()
 #ifdef NXS_NET_DEBUG_0
                             GXSNETDEBUG__G(mit->first) << "  Group " << mit->first << " is conditionned to circle " << mit->second->mCircleId << ". local Grp TS=" << time(NULL) - mGrpServerUpdate.grpUpdateTS << " secs ago, circle grp server update TS=" << time(NULL) - circle_group_server_ts << " secs ago";
 #endif
+                            // We use a max here between grp and msg TS because membership is driven by invite list (grp data) crossed with
+                            // membership requests messages (msg data).
 
-                            if(circle_group_server_ts > mGrpServerUpdate.grpUpdateTS)
+                            auto circle_membership_ts = std::max(circle_group_server_ts,circle_msg_server_ts);
+
+                            if(circle_membership_ts > mGrpServerUpdate.grpUpdateTS)
 							{
 #ifdef NXS_NET_DEBUG_0
 								GXSNETDEBUG__G(mit->first) << " - Updating local Grp Server update TS to follow changes in circles." << std::endl;
 #endif
 
 								RS_STACK_MUTEX(mNxsMutex) ;
-								mGrpServerUpdate.grpUpdateTS = circle_group_server_ts ;
+                                mGrpServerUpdate.grpUpdateTS = circle_membership_ts ;
 							}
 #ifdef NXS_NET_DEBUG_0
                             else
@@ -5383,6 +5387,9 @@ void RsGxsNetService::receiveTurtleSearchResults(TurtleRequestId req,const unsig
         // We should probably check that the identity that is sent corresponds to the group author and don't add
         // it otherwise. But in any case, this won't harm to add a new public identity. If that identity is banned,
         // the group will be discarded in RsGenExchange anyway.
+
+        if(nxs_identity_grp)
+            mGixs->receiveNewIdentity(nxs_identity_grp);
     }
 
 	free(clear_group_data);
@@ -5413,9 +5420,6 @@ void RsGxsNetService::receiveTurtleSearchResults(TurtleRequestId req,const unsig
 #endif
 	mObserver->receiveNewGroups(new_grps);
 	mObserver->receiveDistantSearchResults(req, grpId);
-
-    if(nxs_identity_grp)
-        mGixs->receiveNewIdentity(nxs_identity_grp);
 }
 
 bool RsGxsNetService::search( const std::string& substring,

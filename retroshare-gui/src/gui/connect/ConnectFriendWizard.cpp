@@ -551,24 +551,25 @@ void ConnectFriendWizard::initializePage(int id)
 
 			ui->nodeEdit->setText(loc);
 
-            std::string s;
+            QString s;
+
             if(peerDetails.isHiddenNode)
-                s += peerDetails.hiddenNodeAddress;
+                s += QString::fromStdString(peerDetails.hiddenNodeAddress);
             else
             {
                 if(peerDetails.localAddr!="0.0.0.0")// This is not so nice, but because we deal we string there's no way
-                    s += peerDetails.localAddr;		// to ask about if the ip is null. We really need a proper IP class.
+                    s += QString::fromStdString(peerDetails.localAddr)+":"+QString::number(peerDetails.localPort);		// to ask about if the ip is null. We really need a proper IP class.
 
                 if(peerDetails.extAddr!="0.0.0.0")
                 {
-                    if(!s.empty()) s += " / " ;
-                    s += peerDetails.extAddr;
+                    if(!s.isNull()) s += " / " ;
+                    s += QString::fromStdString(peerDetails.extAddr) + ":"+QString::number(peerDetails.extPort);
                 }
 
                 if(!peerDetails.dyndns.empty())
-                    s += "(" + peerDetails.dyndns + ")" ;
+                    s += " (" + QString::fromStdString(peerDetails.dyndns) + ")" ;
             }
-            ui->ipEdit->setText(QString::fromStdString(s));
+            ui->ipEdit->setText(s);
 			ui->signersEdit->setPlainText(ts);
 
 			fillGroups(this, ui->groupComboBox, groupId);
@@ -880,7 +881,11 @@ void ConnectFriendWizard::cleanFriendCert()
 
 				ui->friendCertCleanLabel->setStyleSheet("");
 			}
-			errorMsg = tr("Valid certificate") + (mIsShortInvite?" (Short format)":" (plain format with profile key)");
+			
+			if (mIsShortInvite)
+				errorMsg = tr("Valid Retroshare ID") + (mIsShortInvite?" (Short format)":" (plain format with profile key)");
+			else
+				errorMsg = tr("Valid certificate") ;
 
             ui->friendCertCleanLabel->setPixmap(FilesDefs::getPixmapFromQtResourcePath(":/images/accepted16.png"));
 		} else {
@@ -898,7 +903,7 @@ void ConnectFriendWizard::cleanFriendCert()
 
 				default:
 					errorMsg = tr("Not a valid Retroshare certificate!") ;
-					ui->friendCertCleanLabel->setStyleSheet("QLabel#friendCertCleanLabel {border: 2px solid red; border-radius: 6px;}");
+					ui->friendCertCleanLabel->setStyleSheet("QLabel#friendCertCleanLabel {border: 1px solid #DCDC41; border-radius: 6px; background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #FFFFD7, stop:1 #FFFFB2);}");
 				}
 			}
             ui->friendCertCleanLabel->setPixmap(FilesDefs::getPixmapFromQtResourcePath(":/images/delete.png"));

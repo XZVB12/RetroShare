@@ -491,7 +491,7 @@ void MainWindow::initStackedPage()
   for (notifyIt = notify.begin(); notifyIt != notify.end(); ++notifyIt) {
       UserNotify *userNotify = notifyIt->first->getUserNotify();
       if (userNotify) {
-          userNotify->initialize(ui->toolBarPage, notifyIt->second.first, notifyIt->second.second,userNotify->textInfo());
+          userNotify->initialize(ui->toolBarPage, notifyIt->second.first, notifyIt->second.second);
           connect(userNotify, SIGNAL(countChanged()), this, SLOT(updateTrayCombine()));
           userNotifyList.push_back(userNotify);
       }
@@ -1232,6 +1232,8 @@ void MainWindow::toggleVisibility(QSystemTrayIcon::ActivationReason e)
             }
             raise();
             activateWindow();
+            if(torstatus)
+                torstatus->reset();
         } else {
             hide();
         }

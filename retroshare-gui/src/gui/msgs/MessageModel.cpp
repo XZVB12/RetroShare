@@ -373,14 +373,16 @@ uint32_t RsMessageModel::updateFilterStatus(ForumModelIndex /*i*/,int /*column*/
 
 void RsMessageModel::setFilter(FilterType filter_type, const QStringList& strings)
 {
-    std::cerr << "Setting filter to filter_type=" << int(filter_type) << " and strings to " ;
-    foreach(const QString& str,strings)
-        std::cerr << "\"" << str.toStdString() << "\" " ;
-    std::cerr << std::endl;
+#ifdef DEBUG_MESSAGE_MODEL
+	std::cerr << "Setting filter to filter_type=" << int(filter_type) << " and strings to " ;
+	foreach(const QString& str,strings)
+		std::cerr << "\"" << str.toStdString() << "\" " ;
+	std::cerr << std::endl;
+#endif
 
-    preMods();
+	preMods();
 
-    mFilterType = filter_type;
+	mFilterType = filter_type;
 	mFilterStrings = strings;
 
 	postMods();
@@ -388,7 +390,7 @@ void RsMessageModel::setFilter(FilterType filter_type, const QStringList& string
 
 QVariant RsMessageModel::toolTipRole(const Rs::Msgs::MsgInfoSummary& fmpe,int column) const
 {
-    if(column == COLUMN_THREAD_AUTHOR)
+	if(column == COLUMN_THREAD_AUTHOR)
 	{
 		QString str,comment ;
 		QList<QIcon> icons;
@@ -460,45 +462,44 @@ QVariant RsMessageModel::displayRole(const Rs::Msgs::MsgInfoSummary& fmpe,int co
 {
 	switch(col)
 	{
-	case COLUMN_THREAD_SUBJECT:   return QVariant(QString::fromUtf8(fmpe.title.c_str()));
-	case COLUMN_THREAD_ATTACHMENT:return QVariant(QString::number(fmpe.count));
+		case COLUMN_THREAD_SUBJECT:   return QVariant(QString::fromUtf8(fmpe.title.c_str()));
+		case COLUMN_THREAD_ATTACHMENT:return QVariant(QString::number(fmpe.count));
 
-	case COLUMN_THREAD_STAR:
-	case COLUMN_THREAD_SPAM:
-	case COLUMN_THREAD_READ:return QVariant();
-	case COLUMN_THREAD_DATE:{
-		QDateTime qtime;
-		qtime.setTime_t(fmpe.ts);
+		case COLUMN_THREAD_STAR:
+		case COLUMN_THREAD_SPAM:
+		case COLUMN_THREAD_READ:return QVariant();
+		case COLUMN_THREAD_DATE:{
+			QDateTime qtime;
+			qtime.setTime_t(fmpe.ts);
 
-		return QVariant(DateTime::formatDateTime(qtime));
-	}
+			return QVariant(DateTime::formatDateTime(qtime));
+		}
 
-	case COLUMN_THREAD_TAGS:{
-        // Tags
-        Rs::Msgs::MsgTagInfo tagInfo;
-        rsMsgs->getMessageTag(fmpe.msgId, tagInfo);
+		case COLUMN_THREAD_TAGS:{
+			// Tags
+			Rs::Msgs::MsgTagInfo tagInfo;
+			rsMsgs->getMessageTag(fmpe.msgId, tagInfo);
 
-        Rs::Msgs::MsgTagType Tags;
-        rsMsgs->getMessageTagTypes(Tags);
+			Rs::Msgs::MsgTagType Tags;
+			rsMsgs->getMessageTagTypes(Tags);
 
-        QString text;
+			QString text;
 
-        // build tag names
-        std::map<uint32_t, std::pair<std::string, uint32_t> >::iterator Tag;
-        for (auto tagit = tagInfo.tagIds.begin(); tagit != tagInfo.tagIds.end(); ++tagit)
-        {
-            if (!text.isNull())
-                text += ",";
+			// build tag names
+			for (auto tagit = tagInfo.tagIds.begin(); tagit != tagInfo.tagIds.end(); ++tagit)
+			{
+				if (!text.isNull())
+					text += ",";
 
-            auto Tag = Tags.types.find(*tagit);
+				auto Tag = Tags.types.find(*tagit);
 
-            if (Tag != Tags.types.end())
-                text += TagDefs::name(Tag->first, Tag->second.first);
-            else
-                std::cerr << "(WW) unknown tag " << (int)Tag->first << " in message " << fmpe.msgId << std::endl;
-        }
-        return text;
-	}
+				if (Tag != Tags.types.end())
+					text += TagDefs::name(Tag->first, Tag->second.first);
+				else
+					RS_WARN("Unknown tag ", (int)Tag->first, " in message ", fmpe.msgId);
+			}
+			return text;
+		}
 		case COLUMN_THREAD_AUTHOR:{
 			QString name;
 			RsGxsId id = RsGxsId(fmpe.srcId.toStdString());
@@ -510,10 +511,9 @@ QVariant RsMessageModel::displayRole(const Rs::Msgs::MsgInfoSummary& fmpe,int co
 			return QVariant(tr("[Unknown]"));
 		}
 
-	default:
+		default:
 		return QVariant("[ TODO ]");
 	}
-
 
 	return QVariant("[ERROR]");
 }
@@ -614,23 +614,24 @@ void RsMessageModel::setMessages(const std::list<Rs::Msgs::MsgInfoSummary>& msgs
 
 void RsMessageModel::setCurrentBox(BoxName bn)
 {
-    if(mCurrentBox != bn)
-    {
+	if(mCurrentBox != bn)
+	{
 		mCurrentBox = bn;
-        updateMessages();
-    }
+		updateMessages();
+	}
 }
 
 void RsMessageModel::setQuickViewFilter(QuickViewFilter fn)
 {
-    if(fn != mQuickViewFilter)
-    {
-        std::cerr << "Changing new quickview filter to " << fn << std::endl;
+	if(fn != mQuickViewFilter)
+	{
+#ifdef DEBUG_MESSAGE_MODEL
+		std::cerr << "Changing new quickview filter to " << fn << std::endl;
+#endif
 
-		preMods();
-        mQuickViewFilter = fn ;
-		postMods();
-    }
+		mQuickViewFilter = fn ;
+		updateMessages();
+	}
 }
 
 void RsMessageModel::getMessageSummaries(BoxName box,std::list<Rs::Msgs::MsgInfoSummary>& msgs)
@@ -679,28 +680,93 @@ void RsMessageModel::setMsgReadStatus(const QModelIndex& i,bool read_status)
 	if(!i.isValid())
 		return ;
 
-    preMods();
-    rsMsgs->MessageRead(i.data(MsgIdRole).toString().toStdString(),!read_status);
+	preMods();
+	rsMsgs->MessageRead(i.data(MsgIdRole).toString().toStdString(),!read_status);
 
-    emit dataChanged(i.sibling(i.row(),0),i.sibling(i.row(),COLUMN_THREAD_NB_COLUMNS-1));
+	emit dataChanged(i,i);
+}
+
+void RsMessageModel::setMsgsReadStatus(const QModelIndexList& mil,bool read_status)
+{
+	//Get all msgId before changing model else Index are invalid and provoc SIGSEGV
+	QVector<std::string> list;
+	int start = rowCount(), stop = 0;
+	for(auto& it : mil)
+		if (it.isValid())
+		{
+			list.append(it.data(MsgIdRole).toString().toStdString());
+			start = std::min(start, it.row());
+			stop = std::max(stop, it.row());
+		}
+
+	preMods();
+	for(auto& it : list)
+		rsMsgs->MessageRead(it,!read_status);
+
+	emit dataChanged(createIndex(start,0),createIndex(stop,RsMessageModel::columnCount()-1));
 }
 
 void RsMessageModel::setMsgStar(const QModelIndex& i,bool star)
 {
-    preMods();
-    rsMsgs->MessageStar(i.data(MsgIdRole).toString().toStdString(),star);
+	if(!i.isValid())
+		return ;
 
-    emit dataChanged(i.sibling(i.row(),0),i.sibling(i.row(),COLUMN_THREAD_NB_COLUMNS-1));
+	preMods();
+	rsMsgs->MessageStar(i.data(MsgIdRole).toString().toStdString(),star);
+
+	emit dataChanged(i,i);
+}
+
+void RsMessageModel::setMsgsStar(const QModelIndexList& mil,bool star)
+{
+	//Get all msgId before changing model else Index are invalid and provoc SIGSEGV
+	QVector<std::string> list;
+	int start = rowCount(), stop = 0;
+	for(auto& it : mil)
+		if (it.isValid())
+		{
+			list.append(it.data(MsgIdRole).toString().toStdString());
+			start = std::min(start, it.row());
+			stop = std::max(stop, it.row());
+		}
+
+	preMods();
+	for(auto& it : list)
+		rsMsgs->MessageStar(it,star);
+
+	emit dataChanged(createIndex(start,0),createIndex(stop,RsMessageModel::columnCount()-1));
 }
 
 void RsMessageModel::setMsgJunk(const QModelIndex& i,bool junk)
 {
-    preMods();
-    rsMsgs->MessageJunk(i.data(MsgIdRole).toString().toStdString(),junk);
+	if(!i.isValid())
+		return ;
 
-    emit dataChanged(i.sibling(i.row(),0),i.sibling(i.row(),COLUMN_THREAD_NB_COLUMNS-1));
+	preMods();
+	rsMsgs->MessageJunk(i.data(MsgIdRole).toString().toStdString(),junk);
+
+	emit dataChanged(i,i);
 }
 
+void RsMessageModel::setMsgsJunk(const QModelIndexList& mil,bool junk)
+{
+	//Get all msgId before changing model else Index are invalid and provoc SIGSEGV
+	QVector<std::string> list;
+	int start = rowCount(), stop = 0;
+	for(auto& it : mil)
+		if (it.isValid())
+		{
+			list.append(it.data(MsgIdRole).toString().toStdString());
+			start = std::min(start, it.row());
+			stop = std::max(stop, it.row());
+		}
+
+	preMods();
+	for(auto& it : list)
+		rsMsgs->MessageJunk(it,junk);
+
+	emit dataChanged(createIndex(start,0),createIndex(stop,RsMessageModel::columnCount()-1));
+}
 
 QModelIndex RsMessageModel::getIndexOfMessage(const std::string& mid) const
 {
@@ -717,8 +783,10 @@ QModelIndex RsMessageModel::getIndexOfMessage(const std::string& mid) const
 	return createIndex(it->second,0,ref);
 }
 
+#ifdef DEBUG_MESSAGE_MODEL
 void RsMessageModel::debug_dump() const
 {
-    for(auto it(mMessages.begin());it!=mMessages.end();++it)
-		std::cerr << "Id: " << it->msgId << ": from " << it->srcId << ": flags=" << it->msgflags << ": title=\"" << it->title << "\"" << std::endl;
+	for(auto& it : mMessages)
+		std::cerr << "Id: " << it.msgId << ": from " << it.srcId << ": flags=" << it.msgflags << ": title=\"" << it.title << "\"" << std::endl;
 }
+#endif
